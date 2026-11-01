@@ -16,7 +16,7 @@ if [[ $# -eq 1 ]]; then
 fi
 [[ -f "${LOCAL_DIR}index.html" ]] || { echo 'Отсутствует site/index.html' >&2; exit 1; }
 [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || { echo 'Есть незафиксированные изменения' >&2; exit 1; }
-args=(-avz --delete --chmod=D755,F644 -e 'ssh -o BatchMode=yes -o ConnectTimeout=5')
+args=(-avz --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r -e 'ssh -o BatchMode=yes -o ConnectTimeout=5')
 if $DRY_RUN; then args+=(--dry-run); fi
 rsync "${args[@]}" "$LOCAL_DIR" "$REMOTE:$REMOTE_DIR/" || { echo 'Ошибка доставки' >&2; exit 1; }
 if $DRY_RUN; then exit 0; fi
