@@ -91,6 +91,7 @@ sudo ss -tlnp | grep sshd
 
 Старое соединение не закрывать, пока не проверен новый вход на порту 2222.
 Имя сервера — `devops-vm`. В `/etc/hosts` VM: `127.0.1.1 devops-vm.devops.local devops-vm`.
+В cloud-image cloud-init заново создаёт `/etc/hosts` при загрузке. Ту же строку `127.0.1.1` нужно заменить в `/etc/cloud/templates/hosts.debian.tmpl`.
 
 ## 6. Межсетевой экран и проверка
 
@@ -131,6 +132,8 @@ sudo apt install nginx
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt -subj /CN=devops.local -addext subjectAltName=DNS:devops.local
 sudo chmod 600 /etc/ssl/private/devops.key
 sudo chmod 644 /etc/ssl/certs/devops.crt
+sudo install -d -o devops -g devops -m 755 /var/www/devops-site
+sudo rm -f /etc/nginx/sites-enabled/default
 sudo cp config/nginx-devops-site.conf /etc/nginx/sites-available/devops-site
 sudo ln -s /etc/nginx/sites-available/devops-site /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
@@ -152,15 +155,33 @@ sudo nginx -t && sudo systemctl reload nginx
 - Сеть: `app_backend`. Том базы: `app_db_data`.
 - Nginx передаёт `/app/` в `http://127.0.0.1:5000/`. Статический сайт `/` сохранён.
 
+Установка Docker на VM из официального репозитория:
+
+```bash
+sudo apt update
+sudo apt install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker devops
+# Выйти и подключиться заново, затем проверить:
+docker run --rm hello-world
+```
+
 ```bash
 # На Mac: сначала проверить план доставки
 rsync -avz --delete --exclude=.env --dry-run app/ devops:app/
 rsync -avz --delete --exclude=.env app/ devops:app/
 # На VM
 cd ~/app
-cp .env.example .env
-chmod 600 .env
-sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env
+if [ ! -f .env ]; then
+    cp .env.example .env
+    chmod 600 .env
+    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env
+fi
 docker compose up -d --build
 docker compose ps
 ```
@@ -168,3 +189,6 @@ docker compose ps
 Создавать `.env` только при его отсутствии. `down` сохраняет данные, `down -v` удаляет том: в опыте счётчик изменился 4 → 5, после удаления тома — 1.
 При остановке app Nginx вернул 502. После запуска доступ восстановлен. Проверка аудита обнаружила публикацию `5000:5000` и вернула 1; после возврата `127.0.0.1:5000:5000` — 0.
 Для первой сборки зависимости загружены через временный HTTP-прокси и SSH-туннель из-за сбоя DNS в VM. Рабочие контейнеры используют обычную сеть backend; настройки прокси в Compose не добавлены.
+
+Временные настройки прокси удалены после сборки. После перезагрузки контейнеры запускаются без туннеля. При повторной загрузке пакетов или образов сначала проверить доступ VM к сети.
+Снимок `05-docker-compose` — итоговая конфигурация ПР №7, приложение и база запущены.
