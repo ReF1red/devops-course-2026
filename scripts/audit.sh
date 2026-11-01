@@ -28,5 +28,11 @@ check 'Межсетевой экран активен' active "$(awk '/^Status:/
 check 'Входящие соединения запрещены по умолчанию' deny "$(sed -n 's/^Default: \([^ ]*\) (incoming).*/\1/p' <<< "$ufw_status")"
 printf '[3] Учётные записи\n'
 awk -F: '$3>=1000 && $3<65534 {printf "    %s (uid=%s)\n",$1,$3}' /etc/passwd
+printf '[4] Веб-сервер\n'
+check 'Nginx запущен' active "$(systemctl is-active nginx)"
+check 'Настройка Nginx корректна' yes "$(if sudo nginx -t >/dev/null 2>&1; then echo yes; else echo no; fi)"
+cert_days=${CERT_MIN_DAYS:-30}
+check 'Сертификат действует достаточно долго' yes "$(if sudo openssl x509 -in /etc/ssl/certs/devops.crt -noout -checkend "$((cert_days * 86400))" >/dev/null 2>&1; then echo yes; else echo no; fi)"
+check 'Права сайта и ключа корректны' yes "$(if [[ -z "$(find /var/www/devops-site -type f -perm -o+w -print)" ]] && [[ "$(sudo stat -c '%a' /etc/ssl/private/devops.key)" == 600 ]]; then echo yes; else echo no; fi)"
 printf 'Пройдено: %s, не пройдено: %s\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
