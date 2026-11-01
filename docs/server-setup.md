@@ -137,6 +137,8 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 На Mac скопировать сертификат: `scp devops:/etc/ssl/certs/devops.crt ~/devops.crt`.
-Проверка: `curl --cacert ~/devops.crt https://devops.local/`.
+Проверка: `curl -4 --cacert ~/devops.crt https://devops.local/`.
 Доставка: `scripts/deploy.sh --dry-run`, затем `scripts/deploy.sh` из чистого репозитория.
 В macOS rsync использует символьную запись прав; результат тот же: каталоги 755, файлы 644.
+
+Снимок `04-nginx-https` сохранён после настройки HTTPS. Для имени `.local` в curl на Mac используем `-4`.
