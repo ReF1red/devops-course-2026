@@ -142,3 +142,29 @@ sudo nginx -t && sudo systemctl reload nginx
 В macOS rsync использует символьную запись прав; результат тот же: каталоги 755, файлы 644.
 
 Снимок `04-nginx-https` сохранён после настройки HTTPS. Для имени `.local` в curl на Mac используем `-4`.
+
+## 9. Docker и приложение
+
+- Docker Engine 29.9.2 и Compose 5.6.1 установлены из официального репозитория Docker для Ubuntu. Пользователь devops добавлен в группу docker.
+- Проект на сервере: `/home/devops/app`. В репозитории — каталог `app/`.
+- Пароль базы создан только на сервере в `app/.env`, права 600. На Mac и в Git его нет.
+- Приложение слушает `127.0.0.1:5000`. Порт PostgreSQL 5432 не опубликован.
+- Сеть: `app_backend`. Том базы: `app_db_data`.
+- Nginx передаёт `/app/` в `http://127.0.0.1:5000/`. Статический сайт `/` сохранён.
+
+```bash
+# На Mac: сначала проверить план доставки
+rsync -avz --delete --exclude=.env --dry-run app/ devops:app/
+rsync -avz --delete --exclude=.env app/ devops:app/
+# На VM
+cd ~/app
+cp .env.example .env
+chmod 600 .env
+sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env
+docker compose up -d --build
+docker compose ps
+```
+
+Создавать `.env` только при его отсутствии. `down` сохраняет данные, `down -v` удаляет том: в опыте счётчик изменился 4 → 5, после удаления тома — 1.
+При остановке app Nginx вернул 502. После запуска доступ восстановлен. Проверка аудита обнаружила публикацию `5000:5000` и вернула 1; после возврата `127.0.0.1:5000:5000` — 0.
+Для первой сборки зависимости загружены через временный HTTP-прокси и SSH-туннель из-за сбоя DNS в VM. Рабочие контейнеры используют обычную сеть backend; настройки прокси в Compose не добавлены.

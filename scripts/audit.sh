@@ -34,5 +34,13 @@ check 'Настройка Nginx корректна' yes "$(if sudo nginx -t >/de
 cert_days=${CERT_MIN_DAYS:-30}
 check 'Сертификат действует достаточно долго' yes "$(if sudo openssl x509 -in /etc/ssl/certs/devops.crt -noout -checkend "$((cert_days * 86400))" >/dev/null 2>&1; then echo yes; else echo no; fi)"
 check 'Права сайта и ключа корректны' yes "$(if [[ -z "$(find /var/www/devops-site -type f -perm -o+w -print)" ]] && [[ "$(sudo stat -c '%a' /etc/ssl/private/devops.key)" == 600 ]]; then echo yes; else echo no; fi)"
+printf '[5] Контейнеризация\n'
+check 'Docker запущен' active "$(systemctl is-active docker)"
+db_id=$(docker compose --project-directory /home/devops/app ps -q db 2>/dev/null)
+check 'База данных готова' healthy "$(docker inspect -f '{{.State.Health.Status}}' "$db_id" 2>/dev/null)"
+port=$(docker compose --project-directory /home/devops/app port app 5000 2>/dev/null)
+other_sockets=$(ss -H -tln | awk '$4 ~ /:(5000|5432)$/ && $4 !~ /^127[.]0[.]0[.]1:/ {print $4}')
+check 'Порты контейнеров закрыты извне' yes "$(if [[ "$port" == '127.0.0.1:5000' && -z "$other_sockets" ]]; then echo yes; else echo no; fi)"
+check 'Файл .env имеет права 600' 600 "$(stat -c '%a' /home/devops/app/.env)"
 printf 'Пройдено: %s, не пройдено: %s\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
