@@ -1,30 +1,35 @@
-# Конфигурация виртуальной машины devops-vm
+# Настройка сервера
 
-## 1. Параметры машины
+## 1. Виртуальная машина
 
-Ubuntu Server 24.04.5 LTS ARM64 без графической оболочки; Parallels Desktop на Mac ARM64. 2 vCPU, 2048 МБ памяти, динамический диск 25 ГБ. Исходный официальный cloud image проверен по SHA256. Установка через cloud-init вместо установщика VirtualBox; это различие среды выполнения.
+- Ubuntu Server 24.04 ARM64, без рабочего стола.
+- Parallels: 2 ядра, 2 ГБ ОЗУ, диск 25 ГБ.
+- Пользователь при установке: `student`.
 
-## 2. Сетевые интерфейсы
+## 2. Сеть
 
-- `nat0`: Shared/NAT, MAC `00:1c:42:15:fe:09`, DHCP `10.211.55.5/24`, шлюз `10.211.55.1`.
-- `lab0`: Host-only, MAC `00:1c:42:28:92:0b`, статический `10.37.129.101/24`. Адрес Mac в этом сегменте — `10.37.129.2`.
-- На Mac в `/etc/hosts`: `10.37.129.101 devops.local`.
+- NAT: `nat0`, адрес `10.211.55.5`, шлюз `10.211.55.1`.
+- Host-only: `lab0`, адрес сервера `10.37.129.101`, адрес Mac `10.37.129.2`.
+- На Mac в `/etc/hosts` добавлено: `10.37.129.101 devops.local`.
 
-В текущей сети исходящий DNS гостевой машины не отвечает, хотя SSH по Host-only работает. Для установки пакетов использован временный обратный SOCKS-туннель через SSH. Он не публикует порт в локальную сеть: на сервере слушает только `127.0.0.1:1080`. Настройки VPN на Mac не менялись. При необходимости повторить установку:
+Прямой доступ VM к пакетам сейчас не работает. Для установки использован SSH-туннель:
 
 ```bash
-# Mac, оставить соединение открытым на время установки пакетов
+# На Mac, оставить открытым на время установки
 ssh -N -R 127.0.0.1:1080 devops
-# VM: временная настройка APT
-printf 'Acquire::http::Proxy "socks5h://127.0.0.1:1080";\nAcquire::https::Proxy "socks5h://127.0.0.1:1080";\n' | sudo tee /etc/apt/apt.conf.d/80-bootstrap-proxy
-sudo apt update
-# После установки удалить только временный конфигурационный файл
-sudo rm /etc/apt/apt.conf.d/80-bootstrap-proxy
+# На VM
+sudo apt -o Acquire::http::Proxy=socks5h://127.0.0.1:1080 update
 ```
 
-## 3. Подключение с хоста
+Порты и адреса отличаются от примера VirtualBox: работа выполнена в Parallels на Mac.
 
-В этом стенде SSH доступен напрямую по Host-only, проброс NAT `127.0.0.1:2222` не используется. До усиления защиты порт VM — 22, после — 2222. В `~/.ssh/config` на Mac:
+## 3. Подключение
+
+До настройки: `ssh -i ~/.ssh/devops_vm student@10.37.129.101` (порт 22).
+После настройки: `ssh devops` (порт 2222).
+Проброс портов NAT не нужен: подключаемся по Host-only.
+
+На Mac в `~/.ssh/config`:
 
 ```sshconfig
 Host devops
@@ -38,17 +43,26 @@ Host devops
     ControlPath ~/.ssh/devops-%r-%p
 ```
 
-Отпечаток Ed25519 сервера сверялся с консолью VM: `SHA256:ISLOLXJRzkLlNvP8Orrm6mNvUWOrYV4oIAt58nHFtbc`. После отката на исходный снимок временно использовать `student`, порт 22. Сверять ключ перед добавлением в `known_hosts`.
+Ключ сервера проверен по консоли. Отпечаток Ed25519: `SHA256:ISLOLXJRzkLlNvP8Orrm6mNvUWOrYV4oIAt58nHFtbc`.
 
-## 4. Учётные записи
+## 4. Пользователи и ключи
 
-`student` (UID 1000) — исходный пользователь с sudo. `devops` (UID 1001) входит в группы `devops`, `sudo`. После усиления SSH разрешён только `devops`, только по ключу. Отдельная пара Ed25519 находится на Mac в `~/.ssh/devops_vm`; закрытый ключ не доставляется на сервер и не входит в репозиторий. На VM: `/home/devops/.ssh` — 700, `authorized_keys` — 600, владелец `devops:devops`.
+```bash
+# На VM под student
+sudo adduser devops
+sudo usermod -aG sudo devops
+# На Mac
+ssh-keygen -t ed25519 -f ~/.ssh/devops_vm -C devops-vm-key
+ssh-copy-id -i ~/.ssh/devops_vm.pub devops@10.37.129.101
+```
 
-Чтобы восстановить учётную запись после отката: `sudo adduser devops`, `sudo usermod -aG sudo devops`, затем `ssh-copy-id -i ~/.ssh/devops_vm.pub devops@10.37.129.101`. Сначала проверить новый вход по ключу, затем усиливать SSH.
+Новый ключ создавать только при его отсутствии. Закрытый ключ остаётся на Mac.
+На VM каталог `/home/devops/.ssh` имеет права 700, файл `authorized_keys` — 600. Владелец — devops.
 
-## 5. Служба SSH
+## 5. Защита SSH
 
-Основной файл сохранён в `/etc/ssh/sshd_config.backup`. Дополняющий файл `/etc/ssh/sshd_config.d/99-hardening.conf`:
+Сохранить копию: `sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup`.
+В `/etc/ssh/sshd_config.d/99-hardening.conf`:
 
 ```text
 Port 2222
@@ -64,33 +78,42 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 ```
 
-В `/etc/ssh/sshd_config.d/50-cloud-init.conf` закомментирована конфликтующая строка `PasswordAuthentication yes`: для большинства директив SSH действует первое найденное значение. Перед применением выполнить `sudo sshd -t`, проверить `sudo sshd -T`. Отключить активацию сокетом: `sudo systemctl disable --now ssh.socket`; включить службу `sudo systemctl enable --now ssh.service`; применить `sudo systemctl restart ssh`. Не закрывать старое соединение до проверки нового на порту 2222. Отказы root и подключения без ключа подтверждаются в `sudo journalctl -u ssh`.
+В `50-cloud-init.conf` закомментировать `PasswordAuthentication yes`, иначе настройка выше не сработает.
 
-Полное имя сервера: `devops-vm.devops.local`; в `/etc/hosts` VM строка `127.0.1.1 devops-vm.devops.local devops-vm`.
+```bash
+sudo sshd -t
+sudo systemctl disable --now ssh.socket
+sudo systemctl enable --now ssh.service
+sudo systemctl restart ssh
+sudo sshd -T
+sudo ss -tlnp | grep sshd
+```
 
-## 6. Правила межсетевого экрана
+Старое соединение не закрывать, пока не проверен новый вход на порту 2222.
+Имя сервера — `devops-vm`. В `/etc/hosts` VM: `127.0.1.1 devops-vm.devops.local devops-vm`.
 
-До включения UFW разрешить управляющий порт:
+## 6. Межсетевой экран и проверка
 
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw limit 2222/tcp comment 'SSH rate-limited'
-sudo ufw allow 80/tcp comment HTTP
-sudo ufw allow 443/tcp comment HTTPS
+sudo ufw limit 2222/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
 sudo ufw logging medium
 sudo ufw status verbose
 ```
 
-Правила действуют для IPv4 и IPv6. Порт 8080 закрыт: обращение с Mac по IP заканчивается тайм-аутом, запись `UFW BLOCK` содержит `SRC=10.37.129.2`, `DST=10.37.129.101`, `PROTO=TCP`, `DPT=8080`. Не открывать шесть новых SSH-соединений за 30 секунд; использовать постоянное соединение.
+Сначала разрешить SSH, затем включать UFW. Частые новые SSH-соединения могут блокироваться.
+Запрос с Mac к `10.37.129.101:8080` блокируется. Запись в `/var/log/ufw.log`: источник `10.37.129.2`, получатель `10.37.129.101`, TCP, порт 8080.
 
-`scripts/audit.sh` запускать на VM. На штатной конфигурации: 6 проверок OK, код 0. При временном `MaxAuthTries 10`: 5 OK, 1 FAIL, код 1. Затем вернуть 3 и проверить `sshd -t` и аудит повторно.
+На VM запустить `scripts/audit.sh`: исправная настройка даёт код 0. Для проверки временно поставить `MaxAuthTries 10`: код должен стать 1. Затем вернуть 3 и снова проверить.
 
-## 7. Снимки состояния
+## 7. Снимки
 
-- `01-clean-install`: обновлённый Ubuntu Server, пользователь student, две сети, SSH до изменения защиты.
-- `02-keys-configured`: создан devops и проверен вход по отдельному ключу.
-- `03-ssh-hardened`: проверены порт 2222, запрет root и парольного входа; до настройки UFW.
+- `01-clean-install` — чистая обновлённая система.
+- `02-keys-configured` — вход devops по ключу.
+- `03-ssh-hardened` — SSH на порту 2222, root и парольный вход запрещены.
 
-Снимки созданы 1 ноября 2026 года. После отката соответствующим образом выбирать SSH-порт и учётную запись. Конфигурация UFW и записи hosts воспроизводятся по разделам выше.
+Созданы 01.11.2026. При откате учитывать порт и пользователя из раздела 3.
