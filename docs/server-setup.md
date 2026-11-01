@@ -117,3 +117,26 @@ sudo ufw status verbose
 - `03-ssh-hardened` — SSH на порту 2222, root и парольный вход запрещены.
 
 Созданы 01.11.2026. При откате учитывать порт и пользователя из раздела 3.
+
+## 8. Веб-сервер
+
+- Установлен пакет `nginx`. Служба запускается автоматически.
+- Файл настройки: `/etc/nginx/sites-available/devops-site`; копия в `config/nginx-devops-site.conf`.
+- Ссылка включения: `/etc/nginx/sites-enabled/devops-site`. Стандартный сайт отключён.
+- Сайт: `/var/www/devops-site`, владелец devops, каталоги 755, файлы 644.
+- Сертификат: `/etc/ssl/certs/devops.crt`, права 644. Ключ: `/etc/ssl/private/devops.key`, root, права 600.
+
+```bash
+sudo apt install nginx
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt -subj /CN=devops.local -addext subjectAltName=DNS:devops.local
+sudo chmod 600 /etc/ssl/private/devops.key
+sudo chmod 644 /etc/ssl/certs/devops.crt
+sudo cp config/nginx-devops-site.conf /etc/nginx/sites-available/devops-site
+sudo ln -s /etc/nginx/sites-available/devops-site /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+На Mac скопировать сертификат: `scp devops:/etc/ssl/certs/devops.crt ~/devops.crt`.
+Проверка: `curl --cacert ~/devops.crt https://devops.local/`.
+Доставка: `scripts/deploy.sh --dry-run`, затем `scripts/deploy.sh` из чистого репозитория.
+В macOS rsync использует символьную запись прав; результат тот же: каталоги 755, файлы 644.
