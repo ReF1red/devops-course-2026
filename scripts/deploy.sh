@@ -20,5 +20,5 @@ args=(-avz --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r -e 'ssh -o BatchMode=yes -
 if $DRY_RUN; then args+=(--dry-run); fi
 rsync "${args[@]}" "$LOCAL_DIR" "$REMOTE:$REMOTE_DIR/" || { echo 'Ошибка доставки' >&2; exit 1; }
 if $DRY_RUN; then exit 0; fi
-curl --fail --silent --show-error --connect-timeout 5 --max-time 15 --cacert "$CA_CERT" "$SITE_URL/" >/dev/null || { echo 'Проверка HTTPS не пройдена' >&2; exit 1; }
+curl -4 --fail --silent --show-error --connect-timeout 5 --max-time 15 --cacert "$CA_CERT" "$SITE_URL/" >/dev/null || { echo 'Проверка HTTPS не пройдена' >&2; exit 1; }
 printf 'Доставлен коммит %s\n' "$(git -C "$ROOT" rev-parse --short HEAD)"
